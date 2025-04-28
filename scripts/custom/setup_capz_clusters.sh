@@ -26,13 +26,13 @@ usage() {
     echo "  -r, --rg-prefix          Resource Group Name Prefix"
     echo
     echo "Optional arguments:"
-    echo "  -l, --location           Azure Location (default: eastus)"
+    echo "  -l, --location           Azure Location (default: polandcentral)"
     echo "  -h, --help               Display this help message"
     exit 1
 }
 
 # Default location
-AZURE_LOCATION="eastus"
+AZURE_LOCATION="polandcentral"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
