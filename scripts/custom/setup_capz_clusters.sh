@@ -98,6 +98,51 @@ else
 fi
 
 #####################################################################
+# 0. VM SKU AVAILABILITY VERIFICATION
+#####################################################################
+echo "Checking VM SKU availability in ${AZURE_LOCATION}..."
+
+# Check Standard_B2s availability
+echo "Checking availability of Standard_B2s..."
+SKU_B2S_OUTPUT=$(az vm list-skus -l ${AZURE_LOCATION} -s Standard_B2s --output table)
+
+# Check if output contains "None" in the Restrictions column for virtualMachines
+if ! echo "$SKU_B2S_OUTPUT" | grep -q "virtualMachines.*Standard_B2s"; then
+    echo "ERROR: Standard_B2s SKU is not available in ${AZURE_LOCATION}!"
+    echo "Please choose a different location with this SKU available."
+    exit 1
+fi
+
+# Extract zones from the output
+ZONES_B2S=$(echo "$SKU_B2S_OUTPUT" | grep "virtualMachines.*Standard_B2s" | awk '{print $4}')
+if [ -z "${ZONES_B2S}" ]; then
+    echo "WARNING: Standard_B2s is available but not in specific zones in ${AZURE_LOCATION}."
+else
+    echo "Standard_B2s is available in zones: ${ZONES_B2S}"
+fi
+
+# Check Standard_D4s_v3 availability
+echo "Checking availability of Standard_D4s_v3..."
+SKU_D4SV3_OUTPUT=$(az vm list-skus -l ${AZURE_LOCATION} -s Standard_D4s_v3 --output table)
+
+# Check if output contains "None" in the Restrictions column for virtualMachines
+if ! echo "$SKU_D4SV3_OUTPUT" | grep -q "virtualMachines.*Standard_D4s_v3"; then
+    echo "ERROR: Standard_D4s_v3 SKU is not available in ${AZURE_LOCATION}!"
+    echo "Please choose a different location with this SKU available."
+    exit 1
+fi
+
+# Extract zones from the output
+ZONES_D4SV3=$(echo "$SKU_D4SV3_OUTPUT" | grep "virtualMachines.*Standard_D4s_v3" | awk '{print $4}')
+if [ -z "${ZONES_D4SV3}" ]; then
+    echo "WARNING: Standard_D4s_v3 is available but not in specific zones in ${AZURE_LOCATION}."
+else
+    echo "Standard_D4s_v3 is available in zones: ${ZONES_D4SV3}"
+fi
+
+echo "VM SKU verification completed successfully."
+
+#####################################################################
 # 1. AZURE RESOURCE CONFIGURATION
 #####################################################################
 # Generate a unique resource group name based on timestamp
