@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Force script to exit on first error
+set -e
+
 #####################################################################
 # CAPZ (Cluster API Provider for Azure) Cluster Setup Script
 #
@@ -16,9 +19,41 @@
 # - CAPZ repository cloned (run this from repo root)
 #####################################################################
 
+# Check dependencies
+check_dependencies() {
+    local missing_deps=()
+    for cmd in az docker kubectl jq curl make sed; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing_deps+=("$cmd")
+        fi
+    done
+    
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        echo "ERROR: Missing required dependencies: ${missing_deps[*]}"
+        echo "Please install them before running this script."
+        exit 1
+    fi
+    echo "All required dependencies found."
+}
+
+# Cleanup resources if script fails
+cleanup_on_error() {
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Script execution failed!"
+        if [ -n "$RESOURCE_GROUP_NAME" ] && [ "$CLEANUP_ON_FAILURE" = "true" ]; then
+            echo "Cleaning up resource group ${RESOURCE_GROUP_NAME}..."
+            az group delete --name "$RESOURCE_GROUP_NAME" --yes --no-wait || true
+            echo "Cleanup initiated. Resources will be deleted in the background."
+        else
+            echo "No cleanup performed. Resource group ${RESOURCE_GROUP_NAME} was left intact."
+            echo "To delete manually, run: az group delete --name ${RESOURCE_GROUP_NAME} --yes"
+        fi
+    fi
+}
+
 # Parse command-line arguments
 usage() {
-    echo "Usage: $0 -s <AZURE_SUBSCRIPTION_ID> -t <AZURE_TENANT_ID> -r <RESOURCE_GROUP_NAME_PREFIX> [-l <AZURE_LOCATION>]"
+    echo "Usage: $0 -s <AZURE_SUBSCRIPTION_ID> -t <AZURE_TENANT_ID> -r <RESOURCE_GROUP_NAME_PREFIX> [-l <AZURE_LOCATION>] [--cleanup-on-failure]"
     echo
     echo "Required arguments:"
     echo "  -s, --subscription-id    Azure Subscription ID"
@@ -26,13 +61,15 @@ usage() {
     echo "  -r, --rg-prefix          Resource Group Name Prefix"
     echo
     echo "Optional arguments:"
-    echo "  -l, --location           Azure Location (default: polandcentral)"
+    echo "  -l, --location           Azure Location (default: eastus)"
+    echo "  --cleanup-on-failure     Delete resources if script fails (default: false)"
     echo "  -h, --help               Display this help message"
     exit 1
 }
 
-# Default location
-AZURE_LOCATION="polandcentral"
+# Default location and cleanup setting
+AZURE_LOCATION="eastus"
+CLEANUP_ON_FAILURE="false"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -54,6 +91,10 @@ while [[ $# -gt 0 ]]; do
             AZURE_LOCATION="$2"
             shift 2
             ;;
+        --cleanup-on-failure)
+            CLEANUP_ON_FAILURE="true"
+            shift
+            ;;
         -h|--help)
             usage
             ;;
@@ -64,22 +105,33 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set trap for cleanup
+trap cleanup_on_error EXIT
+
+# Check dependencies first
+check_dependencies
+
 # Validate required arguments
 if [ -z "$AZURE_SUBSCRIPTION_ID" ] || [ -z "$AZURE_TENANT_ID" ] || [ -z "$RESOURCE_GROUP_NAME_PREFIX" ]; then
     echo "ERROR: Required parameters are missing."
     usage
 fi
 
+# Mask sensitive information when displaying configuration
+masked_subscription=$(echo $AZURE_SUBSCRIPTION_ID | sed 's/^\(....\).*\(....\)$/\1...\2/')
+masked_tenant=$(echo $AZURE_TENANT_ID | sed 's/^\(....\).*\(....\)$/\1...\2/')
+
+# Display configuration with masked IDs
+echo "Using the following configuration:"
+echo "  Subscription ID: $masked_subscription (masked for security)"
+echo "  Tenant ID:       $masked_tenant (masked for security)"
+echo "  RG Prefix:       $RESOURCE_GROUP_NAME_PREFIX"
+echo "  Location:        $AZURE_LOCATION"
+echo "  Cleanup on fail: $CLEANUP_ON_FAILURE"
+
 # Export the variables
 export AZURE_SUBSCRIPTION_ID
 export AZURE_TENANT_ID
-
-# Display configuration
-echo "Using the following configuration:"
-echo "  Subscription ID: $AZURE_SUBSCRIPTION_ID"
-echo "  Tenant ID:       $AZURE_TENANT_ID"
-echo "  RG Prefix:       $RESOURCE_GROUP_NAME_PREFIX"
-echo "  Location:        $AZURE_LOCATION"
 
 # Verify Azure CLI login status
 echo "Verifying Azure CLI login status..."
@@ -90,7 +142,7 @@ if [ $? -ne 0 ]; then
 else
     CURRENT_SUBSCRIPTION=$(echo $ACCOUNT_INFO | jq -r '.id')
     if [ "$CURRENT_SUBSCRIPTION" != "$AZURE_SUBSCRIPTION_ID" ]; then
-        echo "Setting Azure subscription to $AZURE_SUBSCRIPTION_ID..."
+        echo "Setting Azure subscription to $masked_subscription..."
         az account set --subscription "$AZURE_SUBSCRIPTION_ID"
     else
         echo "Already using correct Azure subscription."
@@ -147,7 +199,7 @@ echo "VM SKU verification completed successfully."
 #####################################################################
 # Generate a unique resource group name based on timestamp
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-RESOURCE_GROUP_NAME="${RESOURCE_GROUP_NAME_PREFIX}-capz-rg-${TIMESTAMP}"
+RESOURCE_GROUP_NAME="${RESOURCE_GROUP_NAME_PREFIX}-rg-${TIMESTAMP}"
 echo "Using uniquely generated resource group name: ${RESOURCE_GROUP_NAME}"
 
 # Check if resource group exists, create it if it doesn't
