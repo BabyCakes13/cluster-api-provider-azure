@@ -17,6 +17,10 @@ set -e
 # - Docker installed and running
 # - kubectl installed
 # - CAPZ repository cloned (run this from repo root)
+#
+# SECURITY WARNING: Do NOT modify this script to include credentials
+# or other sensitive values. Do NOT commit any modified version of 
+# this script that might contain actual tokens or credentials.
 #####################################################################
 
 # Check dependencies
@@ -117,9 +121,16 @@ if [ -z "$AZURE_SUBSCRIPTION_ID" ] || [ -z "$AZURE_TENANT_ID" ] || [ -z "$RESOUR
     usage
 fi
 
+# Function to mask sensitive information
+mask_value() {
+    local value=$1
+    local masked=$(echo $value | sed 's/^\(....\).*\(....\)$/\1...\2/')
+    echo $masked
+}
+
 # Mask sensitive information when displaying configuration
-masked_subscription=$(echo $AZURE_SUBSCRIPTION_ID | sed 's/^\(....\).*\(....\)$/\1...\2/')
-masked_tenant=$(echo $AZURE_TENANT_ID | sed 's/^\(....\).*\(....\)$/\1...\2/')
+masked_subscription=$(mask_value $AZURE_SUBSCRIPTION_ID)
+masked_tenant=$(mask_value $AZURE_TENANT_ID)
 
 # Display configuration with masked IDs
 echo "Using the following configuration:"
@@ -233,14 +244,18 @@ IDENTITY_JSON=$(az identity create \
 if [ $? -eq 0 ]; then
     echo "User-managed identity created successfully."
     
-    # Extract identity details
+    # Extract identity details (securely)
     AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY=$(echo ${IDENTITY_JSON} | jq -r '.clientId')
     AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY=$(echo ${IDENTITY_JSON} | jq -r '.principalId')
     AZURE_USER_ASSIGNED_IDENTITY_RESOURCE_ID=$(echo ${IDENTITY_JSON} | jq -r '.resourceId')
     
-    echo "Identity Client ID: ${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY}"
-    echo "Identity Principal ID: ${AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY}"
-    echo "Identity Resource ID: ${AZURE_USER_ASSIGNED_IDENTITY_RESOURCE_ID}"
+    # Display masked identity details for verification
+    masked_client_id=$(mask_value "${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY}")
+    masked_principal_id=$(mask_value "${AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY}")
+    
+    echo "Identity Client ID: ${masked_client_id} (masked)"
+    echo "Identity Principal ID: ${masked_principal_id} (masked)"
+    echo "Identity created successfully with name: ${USER_IDENTITY_NAME}"
     
     # Update environment variables with the new identity
     export USER_IDENTITY=${USER_IDENTITY_NAME}
@@ -280,8 +295,11 @@ if [ $? -eq 0 ]; then
     ACR_LOGIN_SERVER=$(echo ${ACR_JSON} | jq -r '.loginServer')
     ACR_ID=$(echo ${ACR_JSON} | jq -r '.id')
     
+    # Mask ACR ID
+    masked_acr_id=$(mask_value "${ACR_ID}")
+    
     echo "ACR Login Server: ${ACR_LOGIN_SERVER}"
-    echo "ACR ID: ${ACR_ID}"
+    echo "ACR ID: ${masked_acr_id} (masked)"
     
     # Update environment variables with the new ACR
     export REGISTRY="${ACR_LOGIN_SERVER}"
@@ -291,15 +309,17 @@ if [ $? -eq 0 ]; then
     TOKEN_RESPONSE=$(az acr login -n ${ACR_NAME} --expose-token)
     
     if [ $? -eq 0 ]; then
-        # Extract username and access token from response
+        # Extract username and access token from response (securely)
         ACR_USERNAME="00000000-0000-0000-0000-000000000000"
+        # Do not echo or display the token in any way
         ACCESS_TOKEN=$(echo ${TOKEN_RESPONSE} | jq -r '.accessToken')
         
         echo "ACR authentication successful."
         
-        # Login to Docker with the obtained access token
+        # Login to Docker with the obtained access token (securely - no token output)
         echo "Logging into Docker with the access token..."
-        echo ${ACCESS_TOKEN} | docker login ${ACR_LOGIN_SERVER} -u ${ACR_USERNAME} --password-stdin
+        # We're not capturing or displaying the token here:
+        echo ${ACCESS_TOKEN} | docker login ${ACR_LOGIN_SERVER} -u ${ACR_USERNAME} --password-stdin >/dev/null 2>&1
         
         if [ $? -eq 0 ]; then
             echo "Docker login successful."
@@ -337,11 +357,12 @@ export AZURE_CLUSTER_IDENTITY_SECRET_NAMESPACE="default"
 echo "Verifying ACR access with token-based authentication..."
 TOKEN_RESPONSE=$(az acr login -n ${REGISTRY} --expose-token)
 ACR_USERNAME="00000000-0000-0000-0000-000000000000"
+# Don't display token - security sensitive
 ACCESS_TOKEN=$(echo ${TOKEN_RESPONSE} | jq -r '.accessToken')
 
-# Login to Docker with the obtained access token
+# Login to Docker with the obtained access token (without displaying it)
 echo "Logging into Docker with the access token..."
-echo ${ACCESS_TOKEN} | docker login ${REGISTRY} -u ${ACR_USERNAME} --password-stdin
+echo ${ACCESS_TOKEN} | docker login ${REGISTRY} -u ${ACR_USERNAME} --password-stdin >/dev/null 2>&1
 
 # Testing image push capability
 echo "Testing image push capability..."
