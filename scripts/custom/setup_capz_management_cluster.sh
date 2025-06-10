@@ -73,7 +73,7 @@ usage() {
 
 # Default location and cleanup setting
 AZURE_LOCATION="eastus"
-CLEANUP_ON_FAILURE="false"
+CLEANUP_ON_FAILURE="true"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
